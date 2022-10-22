@@ -196,6 +196,81 @@ func PostLockHandler(ctx *context.Context) {
 	ctx.JSON(http.StatusCreated, api.LFSLockResponse{Lock: convert.ToLFSLock(lock)})
 }
 
+func PostMultiLockHandler(ctx *context.Context) {
+	userName := ctx.Params("username")
+	repoName := strings.TrimSuffix(ctx.Params("reponame"), ".git")
+	authorization := ctx.Req.Header.Get("Authorization")
+
+	repository, err := repo_model.GetRepositoryByOwnerAndName(userName, repoName)
+	if err != nil {
+		log.Error("Unable to get repository: %s/%s Error: %v", userName, repoName, err)
+		ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
+		ctx.JSON(http.StatusUnauthorized, api.LFSLockError{
+			Message: "You must have push access to create locks",
+		})
+		return
+	}
+	repository.MustOwner()
+
+	authenticated := authenticate(ctx, repository, authorization, true, true)
+	if !authenticated {
+		ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
+		ctx.JSON(http.StatusUnauthorized, api.LFSLockError{
+			Message: "You must have push access to create locks",
+		})
+		return
+	}
+
+	ctx.Resp.Header().Set("Content-Type", lfs_module.MediaType)
+
+	var req api.LFSMultiLockRequest
+	bodyReader := ctx.Req.Body
+	defer bodyReader.Close()
+
+	dec := json.NewDecoder(bodyReader)
+	if err := dec.Decode(&req); err != nil {
+		log.Warn("Failed to decode lock request as json. Error: %v", err)
+		writeStatus(ctx, http.StatusBadRequest)
+		return
+	}
+
+	locks := make([]*git_model.LFSLock, 0, len(req.Paths))
+	for _, path := range req.Paths {
+		lock, err := git_model.CreateLFSLock(repository, &git_model.LFSLock{
+			Path:    path,
+			OwnerID: ctx.Doer.ID,
+		})
+		if err != nil {
+			if git_model.IsErrLFSLockAlreadyExist(err) {
+				ctx.JSON(http.StatusConflict, api.LFSLockError{
+					Lock:    convert.ToLFSLock(lock),
+					Message: "already created lock",
+				})
+				return
+			}
+			if git_model.IsErrLFSUnauthorizedAction(err) {
+				ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
+				ctx.JSON(http.StatusUnauthorized, api.LFSLockError{
+					Message: "You must have push access to create locks : " + err.Error(),
+				})
+				return
+			}
+			log.Error("Unable to CreateLFSLock in repository %-v at %s for user %-v: Error: %v", repository, path, ctx.Doer, err)
+			ctx.JSON(http.StatusInternalServerError, api.LFSLockError{
+				Message: "internal server error : Internal Server Error",
+			})
+			return
+		}
+		locks = append(locks, lock)
+	}
+
+	resLocks := make([]*api.LFSLock, 0, len(locks))
+	for _, lock := range locks {
+		resLocks = append(resLocks, convert.ToLFSLock(lock))
+	}
+	ctx.JSON(http.StatusCreated, api.LFSMultiLockResponse{Locks: resLocks})
+}
+
 // VerifyLockHandler list locks for verification
 func VerifyLockHandler(ctx *context.Context) {
 	userName := ctx.Params("username")

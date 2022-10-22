@@ -1287,6 +1287,7 @@ func RegisterRoutes(m *web.Route) {
 				m.Group("/locks", func() {
 					m.Get("/", lfs.GetListLockHandler)
 					m.Post("/", lfs.PostLockHandler)
+					m.Post("/multi", lfs.PostMultiLockHandler)
 					m.Post("/verify", lfs.VerifyLockHandler)
 					m.Post("/{lid}/unlock", lfs.UnLockHandler)
 				}, lfs.CheckAcceptMediaType)

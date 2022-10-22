@@ -35,6 +35,14 @@ type LFSLockResponse struct {
 	Lock *LFSLock `json:"lock"`
 }
 
+type LFSMultiLockRequest struct {
+	Paths []string `json:"paths"`
+}
+
+type LFSMultiLockResponse struct {
+	Locks []*LFSLock `json:"locks"`
+}
+
 // LFSLockList represent a list of lock requested
 // https://github.com/git-lfs/git-lfs/blob/master/docs/api/locking.md#list-locks
 type LFSLockList struct {
