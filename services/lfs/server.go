@@ -443,6 +443,8 @@ func buildObjectResponse(rc *requestContext, pointer lfs_module.Pointer, downloa
 				// If we have a signed url (S3, object storage), redirect to this directly.
 				u, err := storage.LFS.URL(pointer.RelativePath(), pointer.Oid)
 				if u != nil && err == nil {
+					// Presigned url does not need the Authorization header
+					// https://github.com/go-gitea/gitea/issues/21525
 					delete(header, "Authorization")
 					link = &lfs_module.Link{Href: u.String(), Header: header}
 				}
