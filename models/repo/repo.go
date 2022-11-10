@@ -143,10 +143,11 @@ type Repository struct {
 	NumClosedProjects   int `xorm:"NOT NULL DEFAULT 0"`
 	NumOpenProjects     int `xorm:"-"`
 
-	IsPrivate  bool `xorm:"INDEX"`
-	IsEmpty    bool `xorm:"INDEX"`
-	IsArchived bool `xorm:"INDEX"`
-	IsMirror   bool `xorm:"INDEX"`
+	IsPrivate  	   bool `xorm:"INDEX"`
+	IsEmpty    	   bool `xorm:"INDEX"`
+	IsArchived 	   bool `xorm:"INDEX"`
+	IsMirror   	   bool `xorm:"INDEX"`
+	IsTwoWayMirror bool `xorm:"INDEX"`
 	*Mirror    `xorm:"-"`
 	Status     RepositoryStatus `xorm:"NOT NULL DEFAULT 0"`
 
@@ -517,12 +518,12 @@ func (repo *Repository) IsOwnedBy(userID int64) bool {
 
 // CanCreateBranch returns true if repository meets the requirements for creating new branches.
 func (repo *Repository) CanCreateBranch() bool {
-	return !repo.IsMirror
+	return !repo.IsMirror || repo.IsTwoWayMirror
 }
 
 // CanEnablePulls returns true if repository meets the requirements of accepting pulls.
 func (repo *Repository) CanEnablePulls() bool {
-	return !repo.IsMirror && !repo.IsEmpty
+	return (!repo.IsMirror || repo.IsTwoWayMirror) && !repo.IsEmpty
 }
 
 // AllowsPulls returns true if repository meets the requirements of accepting pulls and has them enabled.
@@ -532,7 +533,7 @@ func (repo *Repository) AllowsPulls() bool {
 
 // CanEnableEditor returns true if repository meets the requirements of web editor.
 func (repo *Repository) CanEnableEditor() bool {
-	return !repo.IsMirror
+	return !repo.IsMirror || repo.IsTwoWayMirror
 }
 
 // DescriptionHTML does special handles to description and return HTML string.

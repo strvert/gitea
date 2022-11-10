@@ -198,7 +198,7 @@ func httpBase(ctx *context.Context) (h *serviceHandler) {
 				return
 			}
 
-			if !isPull && repo.IsMirror {
+			if !isPull && (repo.IsMirror && !repo.IsTwoWayMirror) {
 				ctx.PlainText(http.StatusForbidden, "mirror repository is read-only")
 				return
 			}

@@ -133,6 +133,7 @@ type RepoSettingForm struct {
 	Private                bool
 	Template               bool
 	EnablePrune            bool
+	EnableTwoWay           bool
 
 	// Advanced settings
 	EnableWiki                            bool
