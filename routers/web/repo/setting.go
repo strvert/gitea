@@ -212,6 +212,7 @@ func SettingsPost(ctx *context.Context) {
 		}
 
 		ctx.Repo.Mirror.EnablePrune = form.EnablePrune
+		ctx.Repo.Repository.IsTwoWayMirror = form.EnableTwoWay
 		ctx.Repo.Mirror.Interval = interval
 		ctx.Repo.Mirror.ScheduleNextUpdate()
 		if err := repo_model.UpdateMirror(ctx, ctx.Repo.Mirror); err != nil {
@@ -241,6 +242,11 @@ func SettingsPost(ctx *context.Context) {
 
 		if err := mirror_service.UpdateAddress(ctx, ctx.Repo.Mirror, address); err != nil {
 			ctx.ServerError("UpdateAddress", err)
+			return
+		}
+
+		if err := repo_service.UpdateRepository(ctx.Repo.Mirror.Repo, false); err != nil {
+			ctx.ServerError("UpdateRepository", err)
 			return
 		}
 
