@@ -115,6 +115,13 @@
 									<label>{{.locale.Tr "repo.mirror_prune_desc"}}</label>
 										</div>
 									</div>
+									<div class="inline field">
+										<label>{{.locale.Tr "repo.mirror_two_way"}}</label>
+										<div class="ui checkbox">
+									<input id="enable_two_way" name="enable_two_way" type="checkbox" {{if .MirrorEnableTwoWay}}checked{{end}}>
+									<label>{{.locale.Tr "repo.mirror_two_way_desc"}}</label>
+										</div>
+									</div>
 									<div class="inline field {{if .Err_Interval}}error{{end}}">
 										<label for="interval">{{.locale.Tr "repo.mirror_interval" .MinimumMirrorInterval}}</label>
 										<input id="interval" name="interval" value="{{.MirrorInterval}}">
