@@ -41,6 +41,7 @@ import {
   initRepoPullRequestMergeInstruction,
   initRepoPullRequestAllowMaintainerEdit,
   initRepoPullRequestReview,
+  initRepoIssueNewBranch,
 } from './features/repo-issue.js';
 import {
   initRepoEllipsisButton,
@@ -169,6 +170,7 @@ $(document).ready(() => {
   initRepoIssueList();
   initRepoIssueReferenceRepositorySearch();
   initRepoIssueTimeTracking();
+  initRepoIssueNewBranch();
   initRepoIssueWipTitle();
   initRepoMigration();
   initRepoMigrationStatusChecker();

@@ -8,6 +8,24 @@ import {initTooltip, showTemporaryTooltip} from '../modules/tippy.js';
 
 const {appSubUrl, csrfToken} = window.config;
 
+export function initRepoIssueNewBranch() {
+  $(document).on('click', '.issue-new-branch', () => {
+    $('.issue-new-branch-modal').modal({
+      duration: 200,
+      onApprove() {
+        $('#newBranchName').val($('#new-branch-name-input').val());
+        $('#new_issue_branch_form').trigger('submit');
+      },
+    }).modal('show');
+
+    $(document).on('click', '#source-branch-list>.item', (e) => {
+      const branch = e.currentTarget.getAttribute('data-name');
+      $('#source-branch-name').html(branch);
+      $('#fromBranch').val(branch);
+    })
+  });
+}
+
 export function initRepoIssueTimeTracking() {
   $(document).on('click', '.issue-add-time', () => {
     $('.issue-start-time-modal').modal({
