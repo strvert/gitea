@@ -200,7 +200,7 @@ func PostMultiLockHandler(ctx *context.Context) {
 	repoName := strings.TrimSuffix(ctx.Params("reponame"), ".git")
 	authorization := ctx.Req.Header.Get("Authorization")
 
-	repository, err := repo_model.GetRepositoryByOwnerAndName(userName, repoName)
+	repository, err := repo_model.GetRepositoryByOwnerAndName(ctx, userName, repoName)
 	if err != nil {
 		log.Error("Unable to get repository: %s/%s Error: %v", userName, repoName, err)
 		ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
@@ -209,7 +209,7 @@ func PostMultiLockHandler(ctx *context.Context) {
 		})
 		return
 	}
-	repository.MustOwner()
+	repository.MustOwner(ctx)
 
 	authenticated := authenticate(ctx, repository, authorization, true, true)
 	if !authenticated {
@@ -242,7 +242,7 @@ func PostMultiLockHandler(ctx *context.Context) {
 		if err != nil {
 			if git_model.IsErrLFSLockAlreadyExist(err) {
 				ctx.JSON(http.StatusConflict, api.LFSLockError{
-					Lock:    convert.ToLFSLock(lock),
+					Lock:    convert.ToLFSLock(ctx, lock),
 					Message: "already created lock",
 				})
 				return
@@ -265,7 +265,7 @@ func PostMultiLockHandler(ctx *context.Context) {
 
 	resLocks := make([]*api.LFSLock, 0, len(locks))
 	for _, lock := range locks {
-		resLocks = append(resLocks, convert.ToLFSLock(lock))
+		resLocks = append(resLocks, convert.ToLFSLock(ctx, lock))
 	}
 	ctx.JSON(http.StatusCreated, api.LFSMultiLockResponse{Locks: resLocks})
 }
