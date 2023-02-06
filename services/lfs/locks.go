@@ -235,7 +235,7 @@ func PostMultiLockHandler(ctx *context.Context) {
 
 	locks := make([]*git_model.LFSLock, 0, len(req.Paths))
 	for _, path := range req.Paths {
-		lock, err := git_model.CreateLFSLock(repository, &git_model.LFSLock{
+		lock, err := git_model.CreateLFSLock(ctx, repository, &git_model.LFSLock{
 			Path:    path,
 			OwnerID: ctx.Doer.ID,
 		})
