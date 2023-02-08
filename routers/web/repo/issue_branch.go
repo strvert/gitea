@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"strings"
+
 	"code.gitea.io/gitea/models"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/git"
@@ -15,6 +17,12 @@ func NewIssueBranch(c *context.Context) {
 
 	if !c.Repo.CanCreateBranch() {
 		c.NotFound("CreateBranch", nil)
+		return
+	}
+
+	if strings.ContainsRune(newBranchName, ' ') {
+		c.Flash.Error("ブランチ名に半角スペースが含まれています")
+		c.Redirect(issue.Link())
 		return
 	}
 
