@@ -2,48 +2,50 @@
 	<div class="ui segment metas">
 		{{template "repo/issue/branch_selector_field" .}}
 
-		<button class="ui fluid button green tooltip issue-new-branch mt-3" data-content='{{.locale.Tr "repo.issues.new_branch"}}' data-position="top center">{{.locale.Tr "repo.issues.new_branch"}}</button>
-		<div class="ui small modal issue-new-branch-modal">
-			<div class="header">{{.locale.Tr "repo.issues.new_branch"}}</div>
-			<div class="content wide form">
-				<form method="POST" id="new_issue_branch_form" action="{{.Issue.Link}}/branch/new" class="ui action input fluid">
-					{{$.CsrfTokenHtml}}
-					<input type="hidden" id="fromBranch" name="fromBranch" value="{{.DefaultBranchName}}">
-					<input type="hidden" id="newBranchName" name="newBranchName" value="{{.Issue.Index}}-{{.Issue.Title}}">
-				</form>
+		{{if and (not .Issue.IsPull) (not .PageIsComparePull)}}
+			<button class="ui fluid button green tooltip issue-new-branch mt-3" data-content='{{.locale.Tr "repo.issues.new_branch"}}' data-position="top center">{{.locale.Tr "repo.issues.new_branch"}}</button>
+			<div class="ui small modal issue-new-branch-modal">
+				<div class="header">{{.locale.Tr "repo.issues.new_branch"}}</div>
+				<div class="content wide form">
+					<form method="POST" id="new_issue_branch_form" action="{{.Issue.Link}}/branch/new" class="ui action input fluid">
+						{{$.CsrfTokenHtml}}
+						<input type="hidden" id="fromBranch" name="fromBranch" value="{{.DefaultBranchName}}">
+						<input type="hidden" id="newBranchName" name="newBranchName" value="{{.Issue.Index}}-{{.Issue.Title}}">
+					</form>
 
-				<div class="inline field">
-					<span>From branch: </span>
-					<div class="ui floating filter select-source-branch-list branch dropdown" data-no-results="{{.locale.Tr "repo.pulls.no_results"}}">
-						<div class="ui basic small button">
-							<span class="text" id="source-branch-name">{{.DefaultBranchName}}</span>
-							{{if .HasIssuesOrPullsWritePermission}}{{svg "octicon-triangle-down" 14 "dropdown icon"}}{{end}}
+					<div class="inline field">
+						<span>From branch: </span>
+						<div class="ui floating filter select-source-branch-list branch dropdown" data-no-results="{{.locale.Tr "repo.pulls.no_results"}}">
+							<div class="ui basic small button">
+								<span class="text" id="source-branch-name">{{.DefaultBranchName}}</span>
+								{{if .HasIssuesOrPullsWritePermission}}{{svg "octicon-triangle-down" 14 "dropdown icon"}}{{end}}
+							</div>
+							<div class="menu fluid">
+								<div id="source-branch-list" class="scrolling menu reference-list-menu">
+									{{range .Branches}}
+										<div class="item" data-id="refs/heads/{{.}}" data-name="{{.}}" data-id-selector="#ref_selector">{{.}}</div>
+									{{end}}
+								</div>
+							</div>
 						</div>
-						<div class="menu fluid">
-							<div id="source-branch-list" class="scrolling menu reference-list-menu">
-								{{range .Branches}}
-									<div class="item" data-id="refs/heads/{{.}}" data-name="{{.}}" data-id-selector="#ref_selector">{{.}}</div>
-								{{end}}
+					</div>
+					<br>
+					<div class="inline field">
+						<span>Branch name: </span>
+						<div class="ui floating filter branch dropdown" data-no-results="{{.locale.Tr "repo.pulls.no_results"}}">
+							<div class="ui input">
+								<input type="text" id="new-branch-name-input" placeholder="ブランチ名" value="{{.Issue.Index}}-{{.Issue.Title}}">
 							</div>
 						</div>
 					</div>
 				</div>
-				<br>
-				<div class="inline field">
-					<span>Branch name: </span>
-					<div class="ui floating filter branch dropdown" data-no-results="{{.locale.Tr "repo.pulls.no_results"}}">
-						<div class="ui input">
-							<input type="text" id="new-branch-name-input" placeholder="ブランチ名" value="{{.Issue.Index}}-{{.Issue.Title}}">
-						</div>
-					</div>
+				<div class="actions">
+					<div class="ui green approve button"> Create branch </div>
+					<div class="ui red cancel button"> Cancel </div>
 				</div>
 			</div>
-			<div class="actions">
-				<div class="ui green approve button"> Create branch </div>
-				<div class="ui red cancel button"> Cancel </div>
-			</div>
-		</div>
-		<div class="ui divider"></div>
+			<div class="ui divider"></div>
+		{{end}}
 
 		{{if .Issue.IsPull}}
 
