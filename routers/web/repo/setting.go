@@ -243,7 +243,7 @@ func SettingsPost(ctx *context.Context) {
 			return
 		}
 
-		if err := repo_service.UpdateRepository(ctx.Repo.Mirror.Repo, false); err != nil {
+		if err := repo_service.UpdateRepository(ctx, ctx.Repo.Mirror.Repo, false); err != nil {
 			ctx.ServerError("UpdateRepository", err)
 			return
 		}
