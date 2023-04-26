@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 
 	"code.gitea.io/gitea/models/perm"
 	"code.gitea.io/gitea/models/unit"
@@ -27,6 +28,7 @@ import (
 	"code.gitea.io/gitea/modules/web/routing"
 	"code.gitea.io/gitea/routers/web/admin"
 	"code.gitea.io/gitea/routers/web/auth"
+	"code.gitea.io/gitea/routers/web/devtest"
 	"code.gitea.io/gitea/routers/web/events"
 	"code.gitea.io/gitea/routers/web/explore"
 	"code.gitea.io/gitea/routers/web/feed"
@@ -101,11 +103,7 @@ func buildAuthGroup() *auth_service.Group {
 func Routes(ctx gocontext.Context) *web.Route {
 	routes := web.NewRoute()
 
-	routes.Use(web.WrapWithPrefix(public.AssetsURLPathPrefix, public.AssetsHandlerFunc(&public.Options{
-		Directory:   path.Join(setting.StaticRootPath, "public"),
-		Prefix:      public.AssetsURLPathPrefix,
-		CorsHandler: CorsHandler(),
-	}), "AssetsHandler"))
+	routes.Use(web.MiddlewareWithPrefix("/assets/", CorsHandler(), public.AssetsHandlerFunc("/assets/")))
 
 	sessioner := session.Sessioner(session.Options{
 		Provider:       setting.SessionConfig.Provider,
@@ -125,8 +123,8 @@ func Routes(ctx gocontext.Context) *web.Route {
 	routes.Use(Recovery(ctx))
 
 	// We use r.Route here over r.Use because this prevents requests that are not for avatars having to go through this additional handler
-	routes.Route("/avatars/*", "GET, HEAD", storageHandler(setting.Avatar.Storage, "avatars", storage.Avatars))
-	routes.Route("/repo-avatars/*", "GET, HEAD", storageHandler(setting.RepoAvatar.Storage, "repo-avatars", storage.RepoAvatars))
+	routes.RouteMethods("/avatars/*", "GET, HEAD", storageHandler(setting.Avatar.Storage, "avatars", storage.Avatars))
+	routes.RouteMethods("/repo-avatars/*", "GET, HEAD", storageHandler(setting.RepoAvatar.Storage, "repo-avatars", storage.RepoAvatars))
 
 	// for health check - doesn't need to be passed through gzip handler
 	routes.Head("/", func(w http.ResponseWriter, req *http.Request) {
@@ -155,7 +153,7 @@ func Routes(ctx gocontext.Context) *web.Route {
 
 	if setting.Service.EnableCaptcha {
 		// The captcha http.Handler should only fire on /captcha/* so we can just mount this on that url
-		routes.Route("/captcha/*", "GET,HEAD", append(common, captcha.Captchaer(context.GetImageCaptcha()))...)
+		routes.RouteMethods("/captcha/*", "GET,HEAD", append(common, captcha.Captchaer(context.GetImageCaptcha()))...)
 	}
 
 	if setting.HasRobotsTxt {
@@ -230,11 +228,11 @@ func Routes(ctx gocontext.Context) *web.Route {
 
 // RegisterRoutes register routes
 func RegisterRoutes(m *web.Route) {
-	reqSignIn := context.Toggle(&context.ToggleOptions{SignInRequired: true})
-	ignSignIn := context.Toggle(&context.ToggleOptions{SignInRequired: setting.Service.RequireSignInView})
-	ignExploreSignIn := context.Toggle(&context.ToggleOptions{SignInRequired: setting.Service.RequireSignInView || setting.Service.Explore.RequireSigninView})
-	ignSignInAndCsrf := context.Toggle(&context.ToggleOptions{DisableCSRF: true})
-	reqSignOut := context.Toggle(&context.ToggleOptions{SignOutRequired: true})
+	reqSignIn := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{SignInRequired: true})
+	ignSignIn := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{SignInRequired: setting.Service.RequireSignInView})
+	ignExploreSignIn := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{SignInRequired: setting.Service.RequireSignInView || setting.Service.Explore.RequireSigninView})
+	ignSignInAndCsrf := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{DisableCSRF: true})
+	reqSignOut := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{SignOutRequired: true})
 	validation.AddBindingRules()
 
 	linkAccountEnabled := func(ctx *context.Context) {
@@ -295,7 +293,7 @@ func RegisterRoutes(m *web.Route) {
 	}
 
 	sitemapEnabled := func(ctx *context.Context) {
-		if !setting.EnableSitemap {
+		if !setting.Other.EnableSitemap {
 			ctx.Error(http.StatusNotFound)
 			return
 		}
@@ -309,7 +307,7 @@ func RegisterRoutes(m *web.Route) {
 	}
 
 	feedEnabled := func(ctx *context.Context) {
-		if !setting.EnableFeed {
+		if !setting.Other.EnableFeed {
 			ctx.Error(http.StatusNotFound)
 			return
 		}
@@ -553,7 +551,7 @@ func RegisterRoutes(m *web.Route) {
 
 	m.Get("/avatar/{hash}", user.AvatarByEmailHash)
 
-	adminReq := context.Toggle(&context.ToggleOptions{SignInRequired: true, AdminRequired: true})
+	adminReq := auth_service.VerifyAuthWithOptions(&auth_service.VerifyOptions{SignInRequired: true, AdminRequired: true})
 
 	// ***** START: Admin *****
 	m.Group("/admin", func() {
@@ -672,16 +670,47 @@ func RegisterRoutes(m *web.Route) {
 			})
 			http.ServeFile(ctx.Resp, ctx.Req, path.Join(setting.StaticRootPath, "public/img/favicon.png"))
 		})
-		m.Group("/{username}", func() {
-			m.Get(".png", user.AvatarByUserName)
-			m.Get(".keys", user.ShowSSHKeys)
-			m.Get(".gpg", user.ShowGPGKeys)
-			m.Get(".rss", feedEnabled, feed.ShowUserFeedRSS)
-			m.Get(".atom", feedEnabled, feed.ShowUserFeedAtom)
-			m.Get("", user.Profile)
-		}, func(ctx *context.Context) {
-			ctx.Data["EnableFeed"] = setting.EnableFeed
-		}, context_service.UserAssignmentWeb())
+		m.Get("/{username}", func(ctx *context.Context) {
+			// WORKAROUND to support usernames with "." in it
+			// https://github.com/go-chi/chi/issues/781
+			username := ctx.Params("username")
+			reloadParam := func(suffix string) (success bool) {
+				ctx.SetParams("username", strings.TrimSuffix(username, suffix))
+				context_service.UserAssignmentWeb()(ctx)
+				return !ctx.Written()
+			}
+			switch {
+			case strings.HasSuffix(username, ".png"):
+				if reloadParam(".png") {
+					user.AvatarByUserName(ctx)
+				}
+			case strings.HasSuffix(username, ".keys"):
+				if reloadParam(".keys") {
+					user.ShowSSHKeys(ctx)
+				}
+			case strings.HasSuffix(username, ".gpg"):
+				if reloadParam(".gpg") {
+					user.ShowGPGKeys(ctx)
+				}
+			case strings.HasSuffix(username, ".rss"):
+				feedEnabled(ctx)
+				if !ctx.Written() && reloadParam(".rss") {
+					context_service.UserAssignmentWeb()(ctx)
+					feed.ShowUserFeedRSS(ctx)
+				}
+			case strings.HasSuffix(username, ".atom"):
+				feedEnabled(ctx)
+				if !ctx.Written() && reloadParam(".atom") {
+					feed.ShowUserFeedAtom(ctx)
+				}
+			default:
+				context_service.UserAssignmentWeb()(ctx)
+				if !ctx.Written() {
+					ctx.Data["EnableFeed"] = setting.Other.EnableFeed
+					user.Profile(ctx)
+				}
+			}
+		})
 		m.Get("/attachments/{uuid}", repo.GetAttachment)
 	}, ignSignIn)
 
@@ -827,7 +856,7 @@ func RegisterRoutes(m *web.Route) {
 					m.Post("/delete", org.SecretsDelete)
 				})
 
-				m.Route("/delete", "GET,POST", org.SettingsDelete)
+				m.RouteMethods("/delete", "GET,POST", org.SettingsDelete)
 
 				m.Group("/packages", func() {
 					m.Get("", org.Packages)
@@ -907,6 +936,7 @@ func RegisterRoutes(m *web.Route) {
 						m.Put("", web.Bind(forms.EditProjectBoardForm{}), org.EditProjectBoard)
 						m.Delete("", org.DeleteProjectBoard)
 						m.Post("/default", org.SetDefaultProjectBoard)
+						m.Post("/unsetdefault", org.UnsetDefaultProjectBoard)
 
 						m.Post("/move", org.MoveIssues)
 					})
@@ -1118,7 +1148,7 @@ func RegisterRoutes(m *web.Route) {
 		m.Group("/comments/{id}", func() {
 			m.Get("/attachments", repo.GetCommentAttachments)
 		})
-		m.Post("/markdown", web.Bind(structs.MarkdownOption{}), misc.Markdown)
+		m.Post("/markup", web.Bind(structs.MarkupOption{}), misc.Markup)
 		m.Group("/labels", func() {
 			m.Post("/new", web.Bind(forms.CreateLabelForm{}), repo.NewLabel)
 			m.Post("/edit", web.Bind(forms.CreateLabelForm{}), repo.UpdateLabel)
@@ -1158,7 +1188,7 @@ func RegisterRoutes(m *web.Route) {
 				m.Post("/upload-file", repo.UploadFileToServer)
 				m.Post("/upload-remove", web.Bind(forms.RemoveUploadFileForm{}), repo.RemoveUploadFileFromServer)
 			}, repo.MustBeEditable, repo.MustBeAbleToUpload)
-		}, context.RepoRef(), canEnableEditor, context.RepoMustNotBeArchived(), repo.MustBeNotEmpty)
+		}, context.RepoRef(), canEnableEditor, context.RepoMustNotBeArchived())
 
 		m.Group("/branches", func() {
 			m.Group("/_new", func() {
@@ -1171,15 +1201,21 @@ func RegisterRoutes(m *web.Route) {
 		}, context.RepoMustNotBeArchived(), reqRepoCodeWriter, repo.MustBeNotEmpty)
 	}, reqSignIn, context.RepoAssignment, context.UnitTypes())
 
-	// Releases
+	// Tags
 	m.Group("/{username}/{reponame}", func() {
 		m.Group("/tags", func() {
 			m.Get("", repo.TagsList)
 			m.Get(".rss", feedEnabled, repo.TagsListFeedRSS)
 			m.Get(".atom", feedEnabled, repo.TagsListFeedAtom)
 		}, func(ctx *context.Context) {
-			ctx.Data["EnableFeed"] = setting.EnableFeed
+			ctx.Data["EnableFeed"] = setting.Other.EnableFeed
 		}, repo.MustBeNotEmpty, reqRepoCodeReader, context.RepoRefByType(context.RepoRefTag, true))
+		m.Post("/tags/delete", repo.DeleteTag, reqSignIn,
+			repo.MustBeNotEmpty, context.RepoMustNotBeArchived(), reqRepoCodeWriter, context.RepoRef())
+	}, reqSignIn, context.RepoAssignment, context.UnitTypes())
+
+	// Releases
+	m.Group("/{username}/{reponame}", func() {
 		m.Group("/releases", func() {
 			m.Get("/", repo.Releases)
 			m.Get("/tag/*", repo.SingleRelease)
@@ -1187,7 +1223,7 @@ func RegisterRoutes(m *web.Route) {
 			m.Get(".rss", feedEnabled, repo.ReleasesFeedRSS)
 			m.Get(".atom", feedEnabled, repo.ReleasesFeedAtom)
 		}, func(ctx *context.Context) {
-			ctx.Data["EnableFeed"] = setting.EnableFeed
+			ctx.Data["EnableFeed"] = setting.Other.EnableFeed
 		}, repo.MustBeNotEmpty, reqRepoReleaseReader, context.RepoRefByType(context.RepoRefTag, true))
 		m.Get("/releases/attachments/{uuid}", repo.GetAttachment, repo.MustBeNotEmpty, reqRepoReleaseReader)
 		m.Group("/releases", func() {
@@ -1197,8 +1233,6 @@ func RegisterRoutes(m *web.Route) {
 			m.Post("/attachments", repo.UploadReleaseAttachment)
 			m.Post("/attachments/remove", repo.DeleteAttachment)
 		}, reqSignIn, repo.MustBeNotEmpty, context.RepoMustNotBeArchived(), reqRepoReleaseWriter, context.RepoRef())
-		m.Post("/tags/delete", repo.DeleteTag, reqSignIn,
-			repo.MustBeNotEmpty, context.RepoMustNotBeArchived(), reqRepoCodeWriter, context.RepoRef())
 		m.Group("/releases", func() {
 			m.Get("/edit/*", repo.EditRelease)
 			m.Post("/edit/*", web.Bind(forms.EditReleaseForm{}), repo.EditReleasePost)
@@ -1230,7 +1264,10 @@ func RegisterRoutes(m *web.Route) {
 
 	m.Group("/{username}/{reponame}", func() {
 		m.Group("", func() {
-			m.Get("/{type:issues|pulls}", repo.Issues)
+			m.Group("/{type:issues|pulls}", func() {
+				m.Get("", repo.Issues)
+				m.Get("/posters", repo.IssuePosters)
+			})
 			m.Get("/{type:issues|pulls}/{index}", repo.ViewIssue)
 			m.Group("/{type:issues|pulls}/{index}/content-history", func() {
 				m.Get("/overview", repo.GetContentHistoryOverview)
@@ -1263,6 +1300,7 @@ func RegisterRoutes(m *web.Route) {
 						m.Put("", web.Bind(forms.EditProjectBoardForm{}), repo.EditProjectBoard)
 						m.Delete("", repo.DeleteProjectBoard)
 						m.Post("/default", repo.SetDefaultProjectBoard)
+						m.Post("/unsetdefault", repo.UnSetDefaultProjectBoard)
 
 						m.Post("/move", repo.MoveIssues)
 					})
@@ -1419,6 +1457,9 @@ func RegisterRoutes(m *web.Route) {
 			m.Get("/cherry-pick/{sha:([a-f0-9]{7,40})$}", repo.SetEditorconfigIfExists, repo.CherryPick)
 		}, repo.MustBeNotEmpty, context.RepoRef(), reqRepoCodeReader)
 
+		m.Get("/rss/branch/*", context.RepoRefByType(context.RepoRefBranch), feedEnabled, feed.RenderBranchFeed)
+		m.Get("/atom/branch/*", context.RepoRefByType(context.RepoRefBranch), feedEnabled, feed.RenderBranchFeed)
+
 		m.Group("/src", func() {
 			m.Get("/branch/*", context.RepoRefByType(context.RepoRefBranch), repo.Home)
 			m.Get("/tag/*", context.RepoRefByType(context.RepoRefTag), repo.Home)
@@ -1478,7 +1519,7 @@ func RegisterRoutes(m *web.Route) {
 				m.GetOptions("/objects/{head:[0-9a-f]{2}}/{hash:[0-9a-f]{38}}", repo.GetLooseObject)
 				m.GetOptions("/objects/pack/pack-{file:[0-9a-f]{40}}.pack", repo.GetPackFile)
 				m.GetOptions("/objects/pack/pack-{file:[0-9a-f]{40}}.idx", repo.GetIdxFile)
-			}, ignSignInAndCsrf, context_service.UserAssignmentWeb())
+			}, ignSignInAndCsrf, repo.HTTPGitEnabledHandler, repo.CorsHandler(), context_service.UserAssignmentWeb())
 		})
 	})
 	// ***** END: Repository *****
@@ -1495,6 +1536,12 @@ func RegisterRoutes(m *web.Route) {
 	if setting.API.EnableSwagger {
 		m.Get("/swagger.v1.json", SwaggerV1Json)
 	}
+
+	if !setting.IsProd {
+		m.Any("/devtest", devtest.List)
+		m.Any("/devtest/{sub}", devtest.Tmpl)
+	}
+
 	m.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		ctx := context.GetContext(req)
 		ctx.NotFound("", nil)
