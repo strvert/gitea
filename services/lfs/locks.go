@@ -58,6 +58,11 @@ func GetListLockHandler(ctx *context.Context) {
 	}
 	repository.MustOwner(ctx)
 
+	context.CheckRepoScopedToken(ctx, repository)
+	if ctx.Written() {
+		return
+	}
+
 	authenticated := authenticate(ctx, repository, rv.Authorization, true, false)
 	if !authenticated {
 		ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
@@ -144,6 +149,11 @@ func PostLockHandler(ctx *context.Context) {
 		return
 	}
 	repository.MustOwner(ctx)
+
+	context.CheckRepoScopedToken(ctx, repository)
+	if ctx.Written() {
+		return
+	}
 
 	authenticated := authenticate(ctx, repository, authorization, true, true)
 	if !authenticated {
@@ -287,6 +297,11 @@ func VerifyLockHandler(ctx *context.Context) {
 	}
 	repository.MustOwner(ctx)
 
+	context.CheckRepoScopedToken(ctx, repository)
+	if ctx.Written() {
+		return
+	}
+
 	authenticated := authenticate(ctx, repository, authorization, true, true)
 	if !authenticated {
 		ctx.Resp.Header().Set("WWW-Authenticate", "Basic realm=gitea-lfs")
@@ -352,6 +367,11 @@ func UnLockHandler(ctx *context.Context) {
 		return
 	}
 	repository.MustOwner(ctx)
+
+	context.CheckRepoScopedToken(ctx, repository)
+	if ctx.Written() {
+		return
+	}
 
 	authenticated := authenticate(ctx, repository, authorization, true, true)
 	if !authenticated {
