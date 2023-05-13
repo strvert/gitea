@@ -31,7 +31,7 @@ import {
   initRepoPullRequestMergeInstruction,
   initRepoPullRequestAllowMaintainerEdit,
   initRepoPullRequestReview,
-  initRepoIssueSidebarList
+  initRepoIssueSidebarList,
   initRepoIssueNewBranch,
 } from './features/repo-issue.js';
 import {
