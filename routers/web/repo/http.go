@@ -109,7 +109,7 @@ func httpBase(ctx *context.Context) (h *serviceHandler) {
 	if err != nil {
 		if repo_model.IsErrRepoNotExist(err) {
 			if redirectRepoID, err := repo_model.LookupRedirect(owner.ID, reponame); err == nil {
-				context.RedirectToRepo(ctx, redirectRepoID)
+				context.RedirectToRepo(ctx.Base, redirectRepoID)
 				return
 			}
 			repoExist = false
@@ -152,7 +152,7 @@ func httpBase(ctx *context.Context) (h *serviceHandler) {
 			return
 		}
 
-		context.CheckRepoScopedToken(ctx, repo)
+		context.CheckRepoScopedToken(ctx, repo, auth_model.GetScopeLevelFromAccessMode(accessMode))
 		if ctx.Written() {
 			return
 		}
@@ -191,7 +191,7 @@ func httpBase(ctx *context.Context) (h *serviceHandler) {
 				return
 			}
 
-			if !isPull && (repo.IsMirror && !repo.IsTwoWayMirror) {
+			if !isPull && repo.IsMirror {
 				ctx.PlainText(http.StatusForbidden, "mirror repository is read-only")
 				return
 			}

@@ -3,8 +3,8 @@ package repo
 import (
 	"strings"
 
-	"code.gitea.io/gitea/models"
 	"code.gitea.io/gitea/modules/context"
+	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/routers/utils"
 	repo_service "code.gitea.io/gitea/services/repository"
@@ -28,13 +28,13 @@ func NewIssueBranch(c *context.Context) {
 
 	err := repo_service.CreateNewBranch(c, c.Doer, c.Repo.Repository, fromBranch, newBranchName)
 	if err != nil {
-		if models.IsErrBranchAlreadyExists(err) || git.IsErrPushOutOfDate(err) {
+		if git_model.IsErrBranchAlreadyExists(err) || git.IsErrPushOutOfDate(err) {
 			c.Flash.Error(c.Tr("repo.branch.branch_already_exists", newBranchName))
 			c.Redirect(issue.Link())
 			return
 		}
-		if models.IsErrBranchNameConflict(err) {
-			e := err.(models.ErrBranchNameConflict)
+		if git_model.IsErrBranchNameConflict(err) {
+			e := err.(git_model.ErrBranchNameConflict)
 			c.Flash.Error(c.Tr("repo.branch.branch_name_conflict", newBranchName, e.BranchName))
 			c.Redirect(issue.Link())
 			return

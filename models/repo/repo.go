@@ -16,6 +16,7 @@ import (
 	"code.gitea.io/gitea/models/db"
 	"code.gitea.io/gitea/models/unit"
 	user_model "code.gitea.io/gitea/models/user"
+	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/markup"
 	"code.gitea.io/gitea/modules/setting"
@@ -145,13 +146,12 @@ type Repository struct {
 	NumClosedActionRuns int `xorm:"NOT NULL DEFAULT 0"`
 	NumOpenActionRuns   int `xorm:"-"`
 
-	IsPrivate  	   bool `xorm:"INDEX"`
-	IsEmpty    	   bool `xorm:"INDEX"`
-	IsArchived 	   bool `xorm:"INDEX"`
-	IsMirror   	   bool `xorm:"INDEX"`
-	IsTwoWayMirror bool `xorm:"INDEX"`
-	*Mirror    `xorm:"-"`
-	Status     RepositoryStatus `xorm:"NOT NULL DEFAULT 0"`
+	IsPrivate  bool `xorm:"INDEX"`
+	IsEmpty    bool `xorm:"INDEX"`
+	IsArchived bool `xorm:"INDEX"`
+	IsMirror   bool `xorm:"INDEX"`
+
+	Status RepositoryStatus `xorm:"NOT NULL DEFAULT 0"`
 
 	RenderingMetas         map[string]string `xorm:"-"`
 	DocumentRenderingMetas map[string]string `xorm:"-"`
@@ -164,6 +164,8 @@ type Repository struct {
 	IsTemplate                      bool               `xorm:"INDEX NOT NULL DEFAULT false"`
 	TemplateID                      int64              `xorm:"INDEX"`
 	Size                            int64              `xorm:"NOT NULL DEFAULT 0"`
+	GitSize                         int64              `xorm:"NOT NULL DEFAULT 0"`
+	LFSSize                         int64              `xorm:"NOT NULL DEFAULT 0"`
 	CodeIndexerStatus               *RepoIndexerStatus `xorm:"-"`
 	StatsIndexerStatus              *RepoIndexerStatus `xorm:"-"`
 	IsFsckEnabled                   bool               `xorm:"NOT NULL DEFAULT true"`
@@ -197,19 +199,47 @@ func (repo *Repository) SanitizedOriginalURL() string {
 	return u.String()
 }
 
-// ColorFormat returns a colored string to represent this repo
-func (repo *Repository) ColorFormat(s fmt.State) {
-	if repo == nil {
-		log.ColorFprintf(s, "%d:%s/%s",
-			log.NewColoredIDValue(0),
-			"<nil>",
-			"<nil>")
-		return
+// text representations to be returned in SizeDetail.Name
+const (
+	SizeDetailNameGit = "git"
+	SizeDetailNameLFS = "lfs"
+)
+
+type SizeDetail struct {
+	Name string
+	Size int64
+}
+
+// SizeDetails forms a struct with various size details about repository
+func (repo *Repository) SizeDetails() []SizeDetail {
+	sizeDetails := []SizeDetail{
+		{
+			Name: SizeDetailNameGit,
+			Size: repo.GitSize,
+		},
+		{
+			Name: SizeDetailNameLFS,
+			Size: repo.LFSSize,
+		},
 	}
-	log.ColorFprintf(s, "%d:%s/%s",
-		log.NewColoredIDValue(repo.ID),
-		repo.OwnerName,
-		repo.Name)
+	return sizeDetails
+}
+
+// SizeDetailsString returns a concatenation of all repository size details as a string
+func (repo *Repository) SizeDetailsString() string {
+	var str strings.Builder
+	sizeDetails := repo.SizeDetails()
+	for _, detail := range sizeDetails {
+		str.WriteString(fmt.Sprintf("%s: %s, ", detail.Name, base.FileSize(detail.Size)))
+	}
+	return strings.TrimSuffix(str.String(), ", ")
+}
+
+func (repo *Repository) LogString() string {
+	if repo == nil {
+		return "<Repository nil>"
+	}
+	return fmt.Sprintf("<Repository %d:%s/%s>", repo.ID, repo.OwnerName, repo.Name)
 }
 
 // IsBeingMigrated indicates that repository is being migrated
@@ -505,12 +535,12 @@ func (repo *Repository) IsOwnedBy(userID int64) bool {
 
 // CanCreateBranch returns true if repository meets the requirements for creating new branches.
 func (repo *Repository) CanCreateBranch() bool {
-	return !repo.IsMirror || repo.IsTwoWayMirror
+	return !repo.IsMirror
 }
 
 // CanEnablePulls returns true if repository meets the requirements of accepting pulls.
 func (repo *Repository) CanEnablePulls() bool {
-	return (!repo.IsMirror || repo.IsTwoWayMirror) && !repo.IsEmpty
+	return !repo.IsMirror && !repo.IsEmpty
 }
 
 // AllowsPulls returns true if repository meets the requirements of accepting pulls and has them enabled.
@@ -520,7 +550,7 @@ func (repo *Repository) AllowsPulls() bool {
 
 // CanEnableEditor returns true if repository meets the requirements of web editor.
 func (repo *Repository) CanEnableEditor() bool {
-	return !repo.IsMirror || repo.IsTwoWayMirror
+	return !repo.IsMirror
 }
 
 // DescriptionHTML does special handles to description and return HTML string.
@@ -832,4 +862,12 @@ func FixNullArchivedRepository(ctx context.Context) (int64, error) {
 	return db.GetEngine(ctx).Where(builder.IsNull{"is_archived"}).Cols("is_archived").NoAutoTime().Update(&Repository{
 		IsArchived: false,
 	})
+}
+
+// UpdateRepositoryOwnerName updates the owner name of all repositories owned by the user
+func UpdateRepositoryOwnerName(ctx context.Context, oldUserName, newUserName string) error {
+	if _, err := db.GetEngine(ctx).Exec("UPDATE `repository` SET owner_name=? WHERE owner_name=?", newUserName, oldUserName); err != nil {
+		return fmt.Errorf("change repo owner name: %w", err)
+	}
+	return nil
 }

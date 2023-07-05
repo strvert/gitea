@@ -371,6 +371,8 @@ type DiffFile struct {
 	IsViewed                  bool // User specific
 	HasChangedSinceLastReview bool // User specific
 	Language                  string
+	Mode                      string
+	OldMode                   string
 }
 
 // GetType returns type of diff file.
@@ -448,8 +450,8 @@ type Diff struct {
 }
 
 // LoadComments loads comments into each line
-func (diff *Diff) LoadComments(ctx context.Context, issue *issues_model.Issue, currentUser *user_model.User) error {
-	allComments, err := issues_model.FetchCodeComments(ctx, issue, currentUser)
+func (diff *Diff) LoadComments(ctx context.Context, issue *issues_model.Issue, currentUser *user_model.User, showOutdatedComments bool) error {
+	allComments, err := issues_model.FetchCodeComments(ctx, issue, currentUser, showOutdatedComments)
 	if err != nil {
 		return err
 	}
@@ -501,6 +503,11 @@ func ParsePatch(maxLines, maxLineCharacters, maxFiles int, reader io.Reader, ski
 		}
 		return diff, err
 	}
+
+	prepareValue := func(s, p string) string {
+		return strings.TrimSpace(strings.TrimPrefix(s, p))
+	}
+
 parsingLoop:
 	for {
 		// 1. A patch file always begins with `diff --git ` + `a/path b/path` (possibly quoted)
@@ -585,11 +592,20 @@ parsingLoop:
 				}
 				break parsingLoop
 			}
+
 			switch {
 			case strings.HasPrefix(line, cmdDiffHead):
 				break curFileLoop
 			case strings.HasPrefix(line, "old mode ") ||
 				strings.HasPrefix(line, "new mode "):
+
+				if strings.HasPrefix(line, "old mode ") {
+					curFile.OldMode = prepareValue(line, "old mode ")
+				}
+				if strings.HasPrefix(line, "new mode ") {
+					curFile.Mode = prepareValue(line, "new mode ")
+				}
+
 				if strings.HasSuffix(line, " 160000\n") {
 					curFile.IsSubmodule = true
 				}
@@ -597,31 +613,34 @@ parsingLoop:
 				curFile.IsRenamed = true
 				curFile.Type = DiffFileRename
 				if curFile.IsAmbiguous {
-					curFile.OldName = line[len("rename from ") : len(line)-1]
+					curFile.OldName = prepareValue(line, "rename from ")
 				}
 			case strings.HasPrefix(line, "rename to "):
 				curFile.IsRenamed = true
 				curFile.Type = DiffFileRename
 				if curFile.IsAmbiguous {
-					curFile.Name = line[len("rename to ") : len(line)-1]
+					curFile.Name = prepareValue(line, "rename to ")
 					curFile.IsAmbiguous = false
 				}
 			case strings.HasPrefix(line, "copy from "):
 				curFile.IsRenamed = true
 				curFile.Type = DiffFileCopy
 				if curFile.IsAmbiguous {
-					curFile.OldName = line[len("copy from ") : len(line)-1]
+					curFile.OldName = prepareValue(line, "copy from ")
 				}
 			case strings.HasPrefix(line, "copy to "):
 				curFile.IsRenamed = true
 				curFile.Type = DiffFileCopy
 				if curFile.IsAmbiguous {
-					curFile.Name = line[len("copy to ") : len(line)-1]
+					curFile.Name = prepareValue(line, "copy to ")
 					curFile.IsAmbiguous = false
 				}
 			case strings.HasPrefix(line, "new file"):
 				curFile.Type = DiffFileAdd
 				curFile.IsCreated = true
+				if strings.HasPrefix(line, "new file mode ") {
+					curFile.Mode = prepareValue(line, "new file mode ")
+				}
 				if strings.HasSuffix(line, " 160000\n") {
 					curFile.IsSubmodule = true
 				}
@@ -1202,6 +1221,42 @@ func GetDiff(gitRepo *git.Repository, opts *DiffOptions, files ...string) (*Diff
 		// previously it would return the results of git diff --shortstat base head so let's try that...
 		diffPaths = []string{opts.BeforeCommitID, opts.AfterCommitID}
 		diff.NumFiles, diff.TotalAddition, diff.TotalDeletion, err = git.GetDiffShortStat(gitRepo.Ctx, repoPath, nil, diffPaths...)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return diff, nil
+}
+
+type PullDiffStats struct {
+	TotalAddition, TotalDeletion int
+}
+
+// GetPullDiffStats
+func GetPullDiffStats(gitRepo *git.Repository, opts *DiffOptions) (*PullDiffStats, error) {
+	repoPath := gitRepo.Path
+
+	diff := &PullDiffStats{}
+
+	separator := "..."
+	if opts.DirectComparison {
+		separator = ".."
+	}
+
+	diffPaths := []string{opts.BeforeCommitID + separator + opts.AfterCommitID}
+	if len(opts.BeforeCommitID) == 0 || opts.BeforeCommitID == git.EmptySHA {
+		diffPaths = []string{git.EmptyTreeSHA, opts.AfterCommitID}
+	}
+
+	var err error
+
+	_, diff.TotalAddition, diff.TotalDeletion, err = git.GetDiffShortStat(gitRepo.Ctx, repoPath, nil, diffPaths...)
+	if err != nil && strings.Contains(err.Error(), "no merge base") {
+		// git >= 2.28 now returns an error if base and head have become unrelated.
+		// previously it would return the results of git diff --shortstat base head so let's try that...
+		diffPaths = []string{opts.BeforeCommitID, opts.AfterCommitID}
+		_, diff.TotalAddition, diff.TotalDeletion, err = git.GetDiffShortStat(gitRepo.Ctx, repoPath, nil, diffPaths...)
 	}
 	if err != nil {
 		return nil, err
