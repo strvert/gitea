@@ -11,7 +11,6 @@ import (
 
 	"code.gitea.io/gitea/models/avatars"
 	issues_model "code.gitea.io/gitea/models/issues"
-	"code.gitea.io/gitea/models/unit"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
@@ -24,7 +23,7 @@ import (
 // GetContentHistoryOverview get overview
 func GetContentHistoryOverview(ctx *context.Context) {
 	issue := GetActionIssue(ctx)
-	if issue == nil {
+	if ctx.Written() {
 		return
 	}
 
@@ -43,11 +42,11 @@ func GetContentHistoryOverview(ctx *context.Context) {
 // GetContentHistoryList  get list
 func GetContentHistoryList(ctx *context.Context) {
 	issue := GetActionIssue(ctx)
-	commentID := ctx.FormInt64("comment_id")
-	if issue == nil {
+	if ctx.Written() {
 		return
 	}
 
+	commentID := ctx.FormInt64("comment_id")
 	items, _ := issues_model.FetchIssueContentHistoryList(ctx, issue.ID, commentID)
 
 	// render history list to HTML for frontend dropdown items: (name, value)
@@ -91,11 +90,16 @@ func GetContentHistoryList(ctx *context.Context) {
 // Admins or owners can always delete history revisions. Normal users can only delete own history revisions.
 func canSoftDeleteContentHistory(ctx *context.Context, issue *issues_model.Issue, comment *issues_model.Comment,
 	history *issues_model.ContentHistory,
-) bool {
-	canSoftDelete := false
-	if ctx.Repo.IsOwner() {
+) (canSoftDelete bool) {
+	// CanWrite means the doer can manage the issue/PR list
+	if ctx.Repo.IsOwner() || ctx.Repo.CanWriteIssuesOrPulls(issue.IsPull) {
 		canSoftDelete = true
-	} else if ctx.Repo.CanWrite(unit.TypeIssues) {
+	} else {
+		// for read-only users, they could still post issues or comments,
+		// they should be able to delete the history related to their own issue/comment, a case is:
+		// 1. the user posts some sensitive data
+		// 2. then the repo owner edits the post but didn't remove the sensitive data
+		// 3. the poster wants to delete the edited history revision
 		if comment == nil {
 			// the issue poster or the history poster can soft-delete
 			canSoftDelete = ctx.Doer.ID == issue.PosterID || ctx.Doer.ID == history.PosterID
@@ -113,7 +117,7 @@ func canSoftDeleteContentHistory(ctx *context.Context, issue *issues_model.Issue
 // GetContentHistoryDetail get detail
 func GetContentHistoryDetail(ctx *context.Context) {
 	issue := GetActionIssue(ctx)
-	if issue == nil {
+	if ctx.Written() {
 		return
 	}
 
@@ -179,7 +183,7 @@ func GetContentHistoryDetail(ctx *context.Context) {
 // SoftDeleteContentHistory soft delete
 func SoftDeleteContentHistory(ctx *context.Context) {
 	issue := GetActionIssue(ctx)
-	if issue == nil {
+	if ctx.Written() {
 		return
 	}
 

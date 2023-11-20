@@ -31,9 +31,8 @@ import {
   initRepoIssueWipTitle,
   initRepoPullRequestMergeInstruction,
   initRepoPullRequestAllowMaintainerEdit,
-  initRepoPullRequestReview,
-  initRepoIssueSidebarList,
   initRepoIssueNewBranch,
+  initRepoPullRequestReview, initRepoIssueSidebarList, initArchivedLabelHandler,
 } from './features/repo-issue.js';
 import {
   initRepoEllipsisButton,
@@ -85,9 +84,12 @@ import {initGiteaFomantic} from './modules/fomantic.js';
 import {onDomReady} from './utils/dom.js';
 import {initRepoIssueList} from './features/repo-issue-list.js';
 import {initCommonIssueListQuickGoto} from './features/common-issue-list.js';
+import {initRepoDiffCommitBranchesAndTags} from './features/repo-diff-commit.js';
+import {initDirAuto} from './modules/dirauto.js';
 
 // Init Gitea's Fomantic settings
 initGiteaFomantic();
+initDirAuto();
 
 onDomReady(() => {
   initGlobalCommon();
@@ -143,6 +145,7 @@ onDomReady(() => {
   initRepoCodeView();
   initRepoCommentForm();
   initRepoEllipsisButton();
+  initRepoDiffCommitBranchesAndTags();
   initRepoCommitLastCommitLoader();
   initRepoEditor();
   initRepoGraphGit();
@@ -150,6 +153,7 @@ onDomReady(() => {
   initRepoIssueDue();
   initRepoIssueList();
   initRepoIssueSidebarList();
+  initArchivedLabelHandler();
   initRepoIssueReferenceRepositorySearch();
   initRepoIssueTimeTracking();
   initRepoIssueNewBranch();

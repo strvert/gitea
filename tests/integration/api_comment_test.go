@@ -128,12 +128,49 @@ func TestAPIGetComment(t *testing.T) {
 	DecodeJSON(t, resp, &apiComment)
 
 	assert.NoError(t, comment.LoadPoster(db.DefaultContext))
-	expect := convert.ToComment(db.DefaultContext, comment)
+	expect := convert.ToAPIComment(db.DefaultContext, repo, comment)
 
 	assert.Equal(t, expect.ID, apiComment.ID)
 	assert.Equal(t, expect.Poster.FullName, apiComment.Poster.FullName)
 	assert.Equal(t, expect.Body, apiComment.Body)
 	assert.Equal(t, expect.Created.Unix(), apiComment.Created.Unix())
+}
+
+func TestAPIGetSystemUserComment(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{})
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: issue.RepoID})
+	repoOwner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: repo.OwnerID})
+
+	for _, systemUser := range []*user_model.User{
+		user_model.NewGhostUser(),
+		user_model.NewActionsUser(),
+	} {
+		body := fmt.Sprintf("Hello %s", systemUser.Name)
+		comment, err := issues_model.CreateComment(db.DefaultContext, &issues_model.CreateCommentOptions{
+			Type:    issues_model.CommentTypeComment,
+			Doer:    systemUser,
+			Repo:    repo,
+			Issue:   issue,
+			Content: body,
+		})
+		assert.NoError(t, err)
+
+		req := NewRequestf(t, "GET", "/api/v1/repos/%s/%s/issues/comments/%d", repoOwner.Name, repo.Name, comment.ID)
+		resp := MakeRequest(t, req, http.StatusOK)
+
+		var apiComment api.Comment
+		DecodeJSON(t, resp, &apiComment)
+
+		if assert.NotNil(t, apiComment.Poster) {
+			if assert.Equal(t, systemUser.ID, apiComment.Poster.ID) {
+				assert.NoError(t, comment.LoadPoster(db.DefaultContext))
+				assert.Equal(t, systemUser.Name, apiComment.Poster.UserName)
+			}
+		}
+		assert.Equal(t, body, apiComment.Body)
+	}
 }
 
 func TestAPIEditComment(t *testing.T) {
